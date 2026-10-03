@@ -1,53 +1,121 @@
+
 import json
-import os
 
 from dotenv import load_dotenv
-from langchain_groq import ChatGroq
+from groq import Groq
+from langchain_core.messages import AIMessage, ToolMessage
 from langgraph.graph import StateGraph, START, END
-from langchain_core.messages import ToolMessage
 
 from app.agent.state import AgentState
+from app.agent.tool_schemas import tool_schemas
 from app.tools import TOOLS
 
 load_dotenv()
 
-llm = ChatGroq(
-    model="openai/gpt-oss-120b",
-    api_key=os.getenv("GROQ_API_KEY"),
-)
+client = Groq()
+MODEL = "openai/gpt-oss-120b"
 
-tools = [
-    {
-        "name": "search_employee",
-        "description": "Search for an employee by employee ID.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "employee_id": {
-                    "type": "string",
-                    "description": "The employee ID, such as E001.",
-                },
-            },
-            "required": ["employee_id"],
-        },
-    }
-]
+SYSTEM_PROMPT = """
+You are an enterprise AI assistant.
+
+For questions about company policies, rules, procedures,
+internal documents, or other company-specific information:
+
+1. Use the enterprise knowledge tool when relevant.
+2. Treat the knowledge tool results as the source of truth.
+3. Only state facts that are supported by the retrieved results.
+4. Do not add, assume, or invent company-specific information.
+5. If the retrieved information is insufficient to answer the question,
+   explicitly say that the available knowledge does not contain enough
+   information to answer the question.
+6. Clearly distinguish between information found in company documents
+   and general knowledge.
+""".strip()
 
 
 def agent_node(state: AgentState):
     messages = state["messages"]
 
-    response = llm.bind_tools(tools).invoke(messages)
+    groq_messages = [
+        {
+            "role": "system",
+            "content": SYSTEM_PROMPT,
+        }
+    ]
+
+    for message in messages:
+        if message.type == "human":
+            groq_messages.append({
+                "role": "user",
+                "content": message.content,
+            })
+
+        elif message.type == "ai":
+            message_data = {
+                "role": "assistant",
+                "content": message.content or "",
+            }
+
+            if message.tool_calls:
+                tool_calls = []
+
+                for tool_call in message.tool_calls:
+                    tool_calls.append({
+                        "id": tool_call["id"],
+                        "type": "function",
+                        "function": {
+                            "name": tool_call["name"],
+                            "arguments": json.dumps(
+                                tool_call["args"]
+                            ),
+                        },
+                    })
+
+                message_data["tool_calls"] = tool_calls
+
+            groq_messages.append(message_data)
+
+        elif message.type == "tool":
+            groq_messages.append({
+                "role": "tool",
+                "tool_call_id": message.tool_call_id,
+                "content": message.content,
+            })
+
+    response = client.chat.completions.create(
+        model=MODEL,
+        messages=groq_messages,
+        tools=tool_schemas,
+        tool_choice="auto",
+    )
+
+    message = response.choices[0].message
+
+    tool_calls = []
+
+    if message.tool_calls:
+        for tool_call in message.tool_calls:
+            tool_calls.append({
+                "name": tool_call.function.name,
+                "args": json.loads(
+                    tool_call.function.arguments
+                ),
+                "id": tool_call.id,
+            })
+
+    ai_message = AIMessage(
+        content=message.content or "",
+        tool_calls=tool_calls,
+    )
 
     return {
-        "messages": [response]
+        "messages": [ai_message]
     }
 
 
 def tool_node(state: AgentState):
     messages = state["messages"]
     last_message = messages[-1]
-
     tool_messages = []
 
     for tool_call in last_message.tool_calls:
@@ -60,7 +128,10 @@ def tool_node(state: AgentState):
 
         tool_messages.append(
             ToolMessage(
-                content=json.dumps(result, ensure_ascii=False),
+                content=json.dumps(
+                    result,
+                    ensure_ascii=False,
+                ),
                 tool_call_id=tool_call["id"],
             )
         )
