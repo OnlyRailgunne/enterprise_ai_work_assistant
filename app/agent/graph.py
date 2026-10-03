@@ -1,73 +1,83 @@
+import json
 import os
 
 from dotenv import load_dotenv
 from langchain_groq import ChatGroq
 from langgraph.graph import StateGraph, START, END
+from langchain_core.messages import ToolMessage
 
 from app.agent.state import AgentState
-from app.db import search_chunks
-from app.rag.embedder import embed_text
-
+from app.tools import TOOLS
 
 load_dotenv()
-
 
 llm = ChatGroq(
     model="openai/gpt-oss-120b",
     api_key=os.getenv("GROQ_API_KEY"),
 )
 
+tools = [
+    {
+        "name": "search_employee",
+        "description": "Search for an employee by employee ID.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "employee_id": {
+                    "type": "string",
+                    "description": "The employee ID, such as E001.",
+                },
+            },
+            "required": ["employee_id"],
+        },
+    }
+]
+
 
 def agent_node(state: AgentState):
     messages = state["messages"]
 
-    # 获取用户最新的问题
-    user_message = messages[-1]
-
-    query = user_message.content
-
-    # 1. 将用户问题转换成 embedding
-    query_embedding = embed_text(query)
-
-    # 2. 从 PostgreSQL 检索相关企业知识
-    results = search_chunks(
-        query_embedding,
-        limit=3,
-    )
-
-    # 3. 将检索结果组成 Context
-    context_parts = []
-
-    for filename, content, distance in results:
-        context_parts.append(
-            f"Source: {filename}\n"
-            f"Content: {content}"
-        )
-
-    context = "\n\n".join(context_parts)
-
-    # 4. 将企业知识加入 LLM Prompt
-    prompt = f"""
-You are an enterprise AI assistant.
-
-Answer the user's question using the provided enterprise knowledge.
-
-Enterprise knowledge:
-{context}
-
-User question:
-{query}
-
-If the answer is not available in the enterprise knowledge,
-say that the information is not available.
-"""
-
-    # 5. 调用 LLM
-    response = llm.invoke(prompt)
+    response = llm.bind_tools(tools).invoke(messages)
 
     return {
         "messages": [response]
     }
+
+
+def tool_node(state: AgentState):
+    messages = state["messages"]
+    last_message = messages[-1]
+
+    tool_messages = []
+
+    for tool_call in last_message.tool_calls:
+        tool_name = tool_call["name"]
+        arguments = tool_call["args"]
+
+        tool = TOOLS[tool_name]
+
+        result = tool(**arguments)
+
+        tool_messages.append(
+            ToolMessage(
+                content=json.dumps(result, ensure_ascii=False),
+                tool_call_id=tool_call["id"],
+            )
+        )
+
+    return {
+        "messages": tool_messages
+    }
+
+
+def route_after_agent(state: AgentState):
+    messages = state["messages"]
+    last_message = messages[-1]
+
+    if last_message.tool_calls:
+        return "tool"
+
+    return END
 
 
 def build_graph():
@@ -78,14 +88,24 @@ def build_graph():
         agent_node,
     )
 
+    graph.add_node(
+        "tool",
+        tool_node,
+    )
+
     graph.add_edge(
         START,
         "agent",
     )
 
-    graph.add_edge(
+    graph.add_conditional_edges(
         "agent",
-        END,
+        route_after_agent,
+    )
+
+    graph.add_edge(
+        "tool",
+        "agent",
     )
 
     return graph.compile()
