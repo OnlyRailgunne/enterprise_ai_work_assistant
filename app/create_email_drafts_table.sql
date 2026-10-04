@@ -1,0 +1,9 @@
+CREATE TABLE IF NOT EXISTS email_drafts (
+    id UUID PRIMARY KEY,
+    recipient_id INTEGER NOT NULL REFERENCES employees(id),
+    subject VARCHAR(200) NOT NULL,
+    body TEXT NOT NULL,
+    status VARCHAR(20) NOT NULL DEFAULT 'draft',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);

@@ -1,22 +1,30 @@
-from app.agent.graph import build_graph
 
-graph = build_graph()
+from langgraph.types import Command
+
+from app.agent.graph import graph
 
 
-def run_agent(messages):
+def run_agent(messages, thread_id="default"):
     result = graph.invoke(
-        {"messages": messages}
+        {"messages": messages},
+        config={
+            "configurable": {
+                "thread_id": thread_id,
+            }
+        },
     )
 
     return result
 
 
-def stream_agent(messages):
-    for chunk in graph.stream(
-        {"messages": messages},
-        stream_mode="messages",
-    ):
-        message_chunk, metadata = chunk
+def resume_agent(approval, thread_id="default"):
+    result = graph.invoke(
+        Command(resume=approval),
+        config={
+            "configurable": {
+                "thread_id": thread_id,
+            }
+        },
+    )
 
-        if message_chunk.content:
-            yield message_chunk.content
+    return result
