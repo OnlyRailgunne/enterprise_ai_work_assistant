@@ -2,6 +2,13 @@ from app.tools.employee import search_employee
 from app.tools.knowledge import search_enterprise_knowledge
 from app.tools.time import get_current_time
 
+from app.tools.project import (
+    create_project,
+    get_project,
+    list_projects,
+    update_project,
+)
+
 from app.tools.task import (
     create_task,
     get_task,
@@ -31,6 +38,11 @@ TOOLS = {
     "get_current_time": get_current_time,
     "search_employee": search_employee,
     "search_enterprise_knowledge": search_enterprise_knowledge,
+
+    "create_project": create_project,
+    "get_project": get_project,
+    "list_projects": list_projects,
+    "update_project": update_project,
 
     "create_task": create_task,
     "get_task": get_task,

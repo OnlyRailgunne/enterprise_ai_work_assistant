@@ -53,6 +53,122 @@ get_current_time_schema = {
 }
 
 
+# =========================
+# Project Tools
+# =========================
+
+create_project_schema = {
+    "type": "function",
+    "function": {
+        "name": "create_project",
+        "description": "Create a new project.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "project_id": {
+                    "type": "string",
+                    "description": "Business project ID such as P001.",
+                },
+                "name": {
+                    "type": "string",
+                    "description": "Project name.",
+                },
+                "description": {
+                    "type": ["string", "null"],
+                    "description": "Project description.",
+                },
+                "status": {
+                    "type": "string",
+                    "description": "Project status.",
+                },
+            },
+            "required": [
+                "project_id",
+                "name",
+            ],
+        },
+    },
+}
+
+
+get_project_schema = {
+    "type": "function",
+    "function": {
+        "name": "get_project",
+        "description": "Get a project by its business project ID.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "project_id": {
+                    "type": "string",
+                    "description": "Business project ID such as P001.",
+                },
+            },
+            "required": ["project_id"],
+        },
+    },
+}
+
+
+list_projects_schema = {
+    "type": "function",
+    "function": {
+        "name": "list_projects",
+        "description": (
+            "List projects, optionally filtered by project status."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "status": {
+                    "type": ["string", "null"],
+                    "description": (
+                        "Filter projects by status. "
+                        "Use null when no status filter is needed."
+                    ),
+                },
+            },
+            "required": [],
+        },
+    },
+}
+
+
+update_project_schema = {
+    "type": "function",
+    "function": {
+        "name": "update_project",
+        "description": "Update an existing project.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "project_id": {
+                    "type": "string",
+                    "description": "Business project ID such as P001.",
+                },
+                "name": {
+                    "type": ["string", "null"],
+                    "description": "New project name.",
+                },
+                "description": {
+                    "type": ["string", "null"],
+                    "description": "New project description.",
+                },
+                "status": {
+                    "type": ["string", "null"],
+                    "description": "New project status.",
+                },
+            },
+            "required": ["project_id"],
+        },
+    },
+}
+
+
+# =========================
+# Task Tools
+# =========================
+
 create_task_schema = {
     "type": "function",
     "function": {
@@ -79,6 +195,13 @@ create_task_schema = {
                     "description": (
                         "Employee ID such as E001. "
                         "Use null when the task has no assignee."
+                    ),
+                },
+                "project_id": {
+                    "type": ["string", "null"],
+                    "description": (
+                        "Business project ID such as P001. "
+                        "Use null when the task does not belong to a project."
                     ),
                 },
                 "due_date": {
@@ -116,7 +239,8 @@ list_tasks_schema = {
     "function": {
         "name": "list_tasks",
         "description": (
-            "List work tasks, optionally filtered by employee or status."
+            "List work tasks, optionally filtered by employee, "
+            "project, or status."
         ),
         "parameters": {
             "type": "object",
@@ -126,6 +250,13 @@ list_tasks_schema = {
                     "description": (
                         "Employee ID such as E001. "
                         "Use null when no employee filter is needed."
+                    ),
+                },
+                "project_id": {
+                    "type": ["string", "null"],
+                    "description": (
+                        "Business project ID such as P001. "
+                        "Use null when no project filter is needed."
                     ),
                 },
                 "status": {
@@ -195,6 +326,13 @@ update_task_schema = {
                         "Use null when the assignee should not be changed."
                     ),
                 },
+                "project_id": {
+                    "type": ["string", "null"],
+                    "description": (
+                        "New business project ID such as P001. "
+                        "Use null when the project should not be changed."
+                    ),
+                },
                 "due_date": {
                     "type": ["string", "null"],
                     "description": "New task due date in YYYY-MM-DD format.",
@@ -224,6 +362,10 @@ complete_task_schema = {
     },
 }
 
+
+# =========================
+# Event Tools
+# =========================
 
 create_event_schema = {
     "type": "function",
@@ -336,6 +478,10 @@ cancel_event_schema = {
     },
 }
 
+
+# =========================
+# Email Tools
+# =========================
 
 create_email_draft_schema = {
     "type": "function",
@@ -504,10 +650,20 @@ approve_email_draft_schema = {
     },
 }
 
+
+# =========================
+# All Tool Schemas
+# =========================
+
 tool_schemas = [
     get_current_time_schema,
     search_employee_schema,
     search_enterprise_knowledge_schema,
+
+    create_project_schema,
+    get_project_schema,
+    list_projects_schema,
+    update_project_schema,
 
     create_task_schema,
     get_task_schema,

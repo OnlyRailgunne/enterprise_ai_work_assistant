@@ -1,95 +1,89 @@
-from groq import Groq
-from langgraph.graph import StateGraph, START, END
+from langgraph.checkpoint.memory import MemorySaver
+from langgraph.graph import END, START, StateGraph
 
-from app.agent.state import AgentState
-
-
-client = Groq()
-
-
-def supervisor(state: AgentState):
-    """
-    Supervisor decides which agent should handle the task next.
-    """
-
-    return {
-        "user_request": state["user_request"],
-    }
-
-
-def research_agent(state: AgentState):
-    """
-    Research Agent gathers information needed for the task.
-
-    For this first version, the research result is simulated.
-    """
-
-    research_result = """
-Remote work policy:
-- Employees can work remotely up to 3 days per week.
-- Remote work applications must be submitted in advance.
-- Employees must remain available during working hours.
-""".strip()
-
-    return {
-        "user_request": state["user_request"],
-        "research_result": research_result,
-    }
-
-
-def writing_agent(state: AgentState):
-    """
-    Writing Agent creates the final response
-    based on the user's request and research result.
-    """
-
-    prompt = f"""
-You are a workplace writing assistant.
-
-User request:
-{state["user_request"]}
-
-Research result:
-{state["research_result"]}
-
-Write a clear and professional response based only on
-the research result.
-Do not invent company-specific policies.
-"""
-
-    response = client.chat.completions.create(
-        model="openai/gpt-oss-120b",
-        messages=[
-            {
-                "role": "system",
-                "content": "You are a helpful workplace writing assistant.",
-            },
-            {
-                "role": "user",
-                "content": prompt,
-            },
-        ],
-    )
-
-    final_answer = response.choices[0].message.content
-
-    return {
-        "user_request": state["user_request"],
-        "research_result": state["research_result"],
-        "final_answer": final_answer,
-    }
+from app.agent.communication_agent import communication_agent
+from app.agent.coordinator import (
+    coordinator_agent,
+    route_from_coordinator,
+)
+from app.agent.email_agent import (
+    create_email_agent,
+    send_email_agent,
+)
+from app.agent.planning_agent import planning_agent
+from app.agent.state import MultiAgentState
 
 
 def build_multi_agent_graph():
-    graph = StateGraph(AgentState)
+    builder = StateGraph(MultiAgentState)
 
-    graph.add_node("supervisor", supervisor)
-    graph.add_node("research_agent", research_agent)
-    graph.add_node("writing_agent", writing_agent)
+    builder.add_node(
+        "coordinator",
+        coordinator_agent,
+    )
 
-    graph.add_edge(START, "supervisor")
-    graph.add_edge("supervisor", "research_agent")
-    graph.add_edge("research_agent", "writing_agent")
-    graph.add_edge("writing_agent", END)
+    builder.add_node(
+        "planning",
+        planning_agent,
+    )
 
-    return graph.compile()
+    builder.add_node(
+        "communication",
+        communication_agent,
+    )
+
+    builder.add_node(
+        "create_email",
+        create_email_agent,
+    )
+
+    builder.add_node(
+        "send_email",
+        send_email_agent,
+    )
+
+    builder.add_edge(
+        START,
+        "coordinator",
+    )
+
+    builder.add_conditional_edges(
+        "coordinator",
+        route_from_coordinator,
+        {
+            "planning": "planning",
+            "communication": "communication",
+            "create_email": "create_email",
+            "send_email": "send_email",
+            END: END,
+        },
+    )
+
+    builder.add_edge(
+        "planning",
+        "coordinator",
+    )
+
+    builder.add_edge(
+        "communication",
+        "coordinator",
+    )
+
+    builder.add_edge(
+        "create_email",
+        "coordinator",
+    )
+
+    builder.add_edge(
+        "send_email",
+        "coordinator",
+    )
+
+    checkpointer = MemorySaver()
+
+    return builder.compile(
+        checkpointer=checkpointer,
+    )
+
+
+multi_agent_graph = build_multi_agent_graph()

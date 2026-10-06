@@ -10,6 +10,7 @@ def create_task(
     status="pending",
     priority="medium",
     assignee_id=None,
+    project_id=None,
     due_date=None,
 ):
     task_id = uuid.uuid4()
@@ -25,19 +26,11 @@ def create_task(
                     status,
                     priority,
                     assignee_id,
+                    project_id,
                     due_date
                 )
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
-                RETURNING
-                    id,
-                    title,
-                    description,
-                    status,
-                    priority,
-                    assignee_id,
-                    due_date,
-                    created_at,
-                    updated_at
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                RETURNING id
                 """,
                 (
                     task_id,
@@ -46,13 +39,12 @@ def create_task(
                     status,
                     priority,
                     assignee_id,
+                    project_id,
                     due_date,
                 ),
             )
 
-            row = cursor.fetchone()
-
-    return _task_from_row(row)
+    return get_task(task_id)
 
 
 def get_task(task_id):
@@ -61,17 +53,22 @@ def get_task(task_id):
             cursor.execute(
                 """
                 SELECT
-                    id,
-                    title,
-                    description,
-                    status,
-                    priority,
-                    assignee_id,
-                    due_date,
-                    created_at,
-                    updated_at
-                FROM tasks
-                WHERE id = %s
+                    t.id,
+                    t.title,
+                    t.description,
+                    t.status,
+                    t.priority,
+                    e.employee_id,
+                    p.project_id,
+                    t.due_date,
+                    t.created_at,
+                    t.updated_at
+                FROM tasks t
+                LEFT JOIN employees e
+                    ON t.assignee_id = e.id
+                LEFT JOIN projects p
+                    ON t.project_id = p.id
+                WHERE t.id = %s
                 """,
                 (task_id,),
             )
@@ -86,42 +83,51 @@ def get_task(task_id):
 
 def list_tasks(
     assignee_id=None,
+    project_id=None,
     status=None,
 ):
     conditions = []
     values = []
 
     if assignee_id is not None:
-        conditions.append("assignee_id = %s")
+        conditions.append("t.assignee_id = %s")
         values.append(assignee_id)
 
+    if project_id is not None:
+        conditions.append("t.project_id = %s")
+        values.append(project_id)
+
     if status is not None:
-        conditions.append("status = %s")
+        conditions.append("t.status = %s")
         values.append(status)
 
     query = """
         SELECT
-            id,
-            title,
-            description,
-            status,
-            priority,
-            assignee_id,
-            due_date,
-            created_at,
-            updated_at
-        FROM tasks
+            t.id,
+            t.title,
+            t.description,
+            t.status,
+            t.priority,
+            e.employee_id,
+            p.project_id,
+            t.due_date,
+            t.created_at,
+            t.updated_at
+        FROM tasks t
+        LEFT JOIN employees e
+            ON t.assignee_id = e.id
+        LEFT JOIN projects p
+            ON t.project_id = p.id
     """
 
     if conditions:
         query += " WHERE " + " AND ".join(conditions)
 
-    query += " ORDER BY created_at DESC"
+    query += " ORDER BY t.created_at DESC"
 
     with get_connection() as connection:
         with connection.cursor() as cursor:
             cursor.execute(query, values)
-
             rows = cursor.fetchall()
 
     return [_task_from_row(row) for row in rows]
@@ -134,6 +140,7 @@ def update_task(
     status=None,
     priority=None,
     assignee_id=None,
+    project_id=None,
     due_date=None,
 ):
     updates = []
@@ -159,6 +166,10 @@ def update_task(
         updates.append("assignee_id = %s")
         values.append(assignee_id)
 
+    if project_id is not None:
+        updates.append("project_id = %s")
+        values.append(project_id)
+
     if due_date is not None:
         updates.append("due_date = %s")
         values.append(due_date)
@@ -174,28 +185,13 @@ def update_task(
         UPDATE tasks
         SET {", ".join(updates)}
         WHERE id = %s
-        RETURNING
-            id,
-            title,
-            description,
-            status,
-            priority,
-            assignee_id,
-            due_date,
-            created_at,
-            updated_at
     """
 
     with get_connection() as connection:
         with connection.cursor() as cursor:
             cursor.execute(query, values)
 
-            row = cursor.fetchone()
-
-    if row is None:
-        return None
-
-    return _task_from_row(row)
+    return get_task(task_id)
 
 
 def complete_task(task_id):
@@ -208,26 +204,11 @@ def complete_task(task_id):
                     status = 'completed',
                     updated_at = CURRENT_TIMESTAMP
                 WHERE id = %s
-                RETURNING
-                    id,
-                    title,
-                    description,
-                    status,
-                    priority,
-                    assignee_id,
-                    due_date,
-                    created_at,
-                    updated_at
                 """,
                 (task_id,),
             )
 
-            row = cursor.fetchone()
-
-    if row is None:
-        return None
-
-    return _task_from_row(row)
+    return get_task(task_id)
 
 
 def _task_from_row(row):
@@ -237,8 +218,9 @@ def _task_from_row(row):
         "description": row[2],
         "status": row[3],
         "priority": row[4],
-        "assignee_id": row[5],
-        "due_date": row[6].isoformat() if isinstance(row[6], date) else row[6],
-        "created_at": row[7].isoformat() if row[7] else None,
-        "updated_at": row[8].isoformat() if row[8] else None,
+        "employee_id": row[5],
+        "project_id": row[6],
+        "due_date": row[7].isoformat() if isinstance(row[7], date) else row[7],
+        "created_at": row[8].isoformat() if row[8] else None,
+        "updated_at": row[9].isoformat() if row[9] else None,
     }
